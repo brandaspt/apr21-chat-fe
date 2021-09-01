@@ -1,7 +1,7 @@
-import { Col, Container, Form, Row } from 'react-bootstrap'
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
-import Message from '../types/Message'
+import { Button, Col, Container, Form, Row } from 'react-bootstrap'
 import { io } from 'socket.io-client'
+import Message from '../types/Message'
 import User from '../types/User'
 
 // io is taking two arguments: the ADDRESS of the server and a config object
@@ -14,6 +14,8 @@ const socket = io(ADDRESS, { transports: ['websocket'] })
 // the server receives this connection
 // and will emit a 'connect' event automatically for us
 
+type Room = "blue" | "red"
+
 const Home = () => {
   const [username, setUsername] = useState('')
   const [chatHistory, setChatHistory] = useState<Message[]>([])
@@ -22,10 +24,16 @@ const Home = () => {
   const [loggedin, setLoggedin] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState<User[]>([])
 
+  const [room, setRoom] = useState<Room>("blue")
+
+  const toggleRoom = () => {
+    setRoom(r => r === "blue" ? "red" : "blue")
+  }
+
   const handleUsername = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     console.log('sending username...')
-    socket.emit('setUsername', { username: username })
+    socket.emit('login', { username, room })
 
     // by the way, on the server...
     // socket.on('setUsername', ({username}) => {})
@@ -41,15 +49,19 @@ const Home = () => {
         timestamp: Date.now(),
         id: socket.id,
       }
-      socket.emit('sendmessage', newMessage)
-      setChatHistory([...chatHistory, newMessage])
+      socket.emit('sendmessage', { message: newMessage, room })
+      setChatHistory(prev => [...prev, newMessage])
       setMessage('')
     }
   }
 
+  console.log(room)
+
   const checkOnlineUsers = async () => {
     try {
-      const response = await fetch(ADDRESS + '/online-users')
+      const endpoint = ADDRESS + '/online-users'
+      console.log(endpoint)
+      const response = await fetch(endpoint)
       const data = await response.json()
       setOnlineUsers(data.onlineUsers as User[])
     } catch (error) {
@@ -74,11 +86,11 @@ const Home = () => {
       socket.on('message', (message: Message) => {
         console.log('a new message was received!')
         // this is for ALL THE CLIENTS EXCEPT the one who emitted the message
-        setChatHistory([...chatHistory, message])
+        setChatHistory(prev => [...prev, message])
       })
     })
 
-    socket.on('newConnection', () => {
+    socket.on('newLogin', () => {
       // oh, a new user logged in! let's fetch the online-user route again!
       console.log('new user logged in!')
       checkOnlineUsers()
@@ -110,13 +122,14 @@ const Home = () => {
       <Row className="my-3" style={{ height: '95vh' }}>
         <Col md={10} className="d-flex flex-column justify-content-between">
           {/* 3 components: username input field, chat history, message input field */}
-          <Form onSubmit={handleUsername}>
+          <Form onSubmit={handleUsername} className="d-flex ">
             <Form.Control
               placeholder="Set username here"
               value={username}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)}
               disabled={loggedin}
             />
+            <Button variant={room === "blue" ? "primary" : "danger"} className="ml-2" onClick={toggleRoom}>Room</Button>
           </Form>
           <ul>
             {chatHistory.map((message) => (
@@ -142,7 +155,7 @@ const Home = () => {
         <Col md={2} style={{ borderLeft: '2px solid black' }}>
           <div>Connected users</div>
           <ul>
-            {onlineUsers.map((user) => (
+            {onlineUsers && onlineUsers.filter(user => user.room === room).map((user) => (
               <li key={user.id}>{user.username}</li>
             ))}
           </ul>
